@@ -15,6 +15,12 @@ public class GameManager : MonoBehaviour
     [Header("Validation")]
     public ConstellationValidator validator;
 
+    [Header("UI")]
+    public LevelCompletePopup levelCompletePopup;
+    [TextArea]
+    public string completionMessage; 
+
+
     public Rope CreateRope(Star a, Star b)
     {
         // If rope already exists, do nothing
@@ -49,7 +55,7 @@ public class GameManager : MonoBehaviour
     void OnConnectionsChanged()
     {
         // Build current edge set from ropes
-        HashSet<(int,int)> edges = new HashSet<(int,int)>();
+        HashSet<(int, int)> edges = new HashSet<(int, int)>();
         foreach (var r in ropes)
         {
             int x = Mathf.Min(r.A.starId, r.B.starId);
@@ -58,19 +64,26 @@ public class GameManager : MonoBehaviour
         }
 
         var result = validator.Validate(edges);
+
         if (result.state == ConstellationValidator.State.CorrectComplete)
         {
-            Debug.Log(" Constellation complete!");
-            // TODO: Show UI “You formed Aries!”
+            Debug.Log("Constellation complete!");
+
+            // Show Aries info popup
+            if (levelCompletePopup != null)
+            {
+                levelCompletePopup.Show(completionMessage);
+            }
         }
         else if (result.state == ConstellationValidator.State.HasForbidden)
         {
-            Debug.Log($" Extra rope detected: {result.message}");
-            // TODO: Show a UI text box telling the player to remove the extra rope
+            Debug.LogWarning($"Extra rope detected: {result.message}");
+            // Here you can also show a small warning UI if you want.
         }
-        else
+        else // Incomplete
         {
-            // Incomplete or other issues → do nothing special
+            // Constellation isn't finished yet; no popup.
+            // Debug.Log("Constellation incomplete.");
         }
     }
 }

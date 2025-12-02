@@ -46,6 +46,16 @@ public class PlayerController : MonoBehaviour
     [Tooltip("0 = right, 90 = up, 180 = left, 270 = down")]
     public float startAngleDegrees = 0f;
 
+    [Header("Visuals")]
+    public SpriteRenderer spriteRenderer;
+    public Sprite standingSprite;  // used when on a star
+    public Sprite climbingSprite;  // used when on a rope
+
+    [Header("Rope Boarding")]
+    public float ropeDetectRadius = 0.2f;
+    public LayerMask ropeMask;   // set this to Rope layer in Inspector
+
+
     Vector2 AngleToDir(float deg)
     {
         float r = deg * Mathf.Deg2Rad;
@@ -57,6 +67,7 @@ public class PlayerController : MonoBehaviour
         if (!star) return;
         Vector2 d = outwardDir.sqrMagnitude > 1e-6f ? outwardDir.normalized : Vector2.right;
         transform.position = star.Position2D + d * orbitRadius;
+        transform.up = d;
     }
 
     void Start()
@@ -66,12 +77,19 @@ public class PlayerController : MonoBehaviour
             // Use Inspector angle instead of forcing Vector2.right
             Vector2 dir = AngleToDir(startAngleDegrees);
             PlaceOnStar(currentStar, dir);
+            
+            UpdateVisualBySurface();  // show standing sprite at start
+
         }   
     }
 
     void Update()
     {
-        if (surface == Surface.Star) UpdateOnStar();
+        if (surface == Surface.Star) 
+        {
+            UpdateOnStar();
+            UpdateRopeCandidate();
+        }
         else UpdateOnRope();
 
         HandleThrowInput();
@@ -120,10 +138,20 @@ public class PlayerController : MonoBehaviour
         Vector2 fromCenter = (Vector2)transform.position - center;
         if (fromCenter.sqrMagnitude < 0.0001f)
             fromCenter = Vector2.right * orbitRadius;
-
+        /*
         float angle = Mathf.Atan2(fromCenter.y, fromCenter.x) + deltaAngle;
         Vector2 newPos = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * orbitRadius;
         transform.position = newPos;
+        */
+        float angle = Mathf.Atan2(fromCenter.y, fromCenter.x) + deltaAngle;
+        Vector2 radial = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+
+        Vector2 newPos = center + radial * orbitRadius;
+        transform.position = newPos;
+
+        // rotate so feet point toward the star center
+        // radial is from center → player
+        transform.up = radial;   // head outward, feet toward center
     }
 
     void UpdateOnRope()
@@ -145,6 +173,7 @@ public class PlayerController : MonoBehaviour
         surface = Surface.Star;
         currentRope = null;
         PlaceOnStar(currentStar, dirToB);    // snap at rope contact direction
+        UpdateVisualBySurface();
         }
         else if (ropeT >= 1.0f)
         {
@@ -154,6 +183,7 @@ public class PlayerController : MonoBehaviour
         surface = Surface.Star;
         currentRope = null;
         PlaceOnStar(currentStar, dirToA);    // snap at rope contact direction
+        UpdateVisualBySurface();
         }
     }
 
@@ -225,6 +255,7 @@ public class PlayerController : MonoBehaviour
             currentRope = rope;
             ropeT = 0.02f;
             surface = Surface.Rope;
+            UpdateVisualBySurface();
             gameManager.OnConnectionCreated(currentStar, hitStar);
             return;
         }
@@ -241,6 +272,7 @@ public class PlayerController : MonoBehaviour
         currentRope = rope;
         ropeT = Mathf.Clamp01(t);
         surface = Surface.Rope;
+        UpdateVisualBySurface();
     }
 
     void TryRemoveAimedRope()
@@ -398,6 +430,7 @@ public class PlayerController : MonoBehaviour
     // ---------- Trigger detection for "press R to board" ----------
     // Player must have Rigidbody2D (Kinematic is fine) + CircleCollider2D (IsTrigger = true)
     // Rope EdgeCollider2D must be IsTrigger = true
+    /*
     void OnTriggerStay2D(Collider2D other)
     {
         // Only consider Rope layer overlaps
@@ -413,6 +446,40 @@ public class PlayerController : MonoBehaviour
             ropeCandidate = rope;
         }
     }
+*/
+
+    void UpdateRopeCandidate()
+    {
+        ropeCandidate = null;
+
+        if (surface != Surface.Star || currentStar == null) return;
+
+        // Look for rope colliders in a small radius around the player
+        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, ropeDetectRadius, ropeMask);
+
+        float bestDist = float.MaxValue;
+        Rope best = null;
+
+        foreach (var hit in hits)
+        {
+            var rope = hit.GetComponent<Rope>();
+            if (!rope) continue;
+
+            // Only ropes that are actually connected to this star
+            if (rope.A != currentStar && rope.B != currentStar) continue;
+
+            float d = Vector2.SqrMagnitude(hit.ClosestPoint(transform.position) - (Vector2)transform.position);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = rope;
+            }
+        }
+
+        ropeCandidate = best;
+    }
+
+
 
     void OnTriggerExit2D(Collider2D other)
     {
@@ -420,6 +487,21 @@ public class PlayerController : MonoBehaviour
         if (rope && rope == ropeCandidate)
             ropeCandidate = null;
     }
+
+    void UpdateVisualBySurface()
+    {
+        if (!spriteRenderer) return;
+
+        if (surface == Surface.Rope && climbingSprite != null)
+        {
+            spriteRenderer.sprite = climbingSprite;
+        }
+        else if (standingSprite != null)
+        {
+            spriteRenderer.sprite = standingSprite;
+        }
+    }
+
 }
 
 static class InputShim
